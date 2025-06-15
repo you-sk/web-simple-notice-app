@@ -131,6 +131,11 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // --- Constants ---
+            const TIMERS_STORAGE_KEY = 'simpleNotificationApp.timers';
+            const NOTIFIED_STORAGE_KEY = 'simpleNotificationApp.notifiedTimers';
+            const MAX_NOTIFIED_ITEMS = 999;
+
             // --- DOM Element References ---
             const permissionArea = document.getElementById('permission-area');
             const permissionStatus = document.getElementById('permission-status');
@@ -142,7 +147,6 @@
             const noNotifiedMessage = document.getElementById('no-notified-message');
             const clearAllNotifiedBtn = document.getElementById('clear-all-notified-btn');
             const statusMessageContainer = document.getElementById('status-message-container');
-            
             const messageInput = document.getElementById('message');
             const triggerTypeRadios = document.querySelectorAll('input[name="trigger-type"]');
             const minutesInput = document.getElementById('minutes');
@@ -155,7 +159,25 @@
             let notifiedTimers = [];
             let statusTimeout;
 
-            // --- Functions ---
+            // --- LocalStorage Functions ---
+            const saveTimers = () => localStorage.setItem(TIMERS_STORAGE_KEY, JSON.stringify(timers));
+            const saveNotifiedTimers = () => {
+                // Ensure list does not exceed max length
+                const sorted = notifiedTimers.sort((a, b) => b.notifiedAt - a.notifiedAt);
+                if (sorted.length > MAX_NOTIFIED_ITEMS) {
+                    notifiedTimers = sorted.slice(0, MAX_NOTIFIED_ITEMS);
+                }
+                localStorage.setItem(NOTIFIED_STORAGE_KEY, JSON.stringify(notifiedTimers));
+            };
+
+            const loadData = () => {
+                const storedTimers = JSON.parse(localStorage.getItem(TIMERS_STORAGE_KEY) || '[]');
+                const storedNotified = JSON.parse(localStorage.getItem(NOTIFIED_STORAGE_KEY) || '[]');
+                timers = storedTimers;
+                notifiedTimers = storedNotified;
+            };
+
+            // --- Core Functions ---
             function showStatusMessage(text, type = 'error') {
                 clearTimeout(statusTimeout);
                 statusMessageContainer.innerHTML = '';
@@ -178,9 +200,7 @@
                 }
                 timerForm.style.display = 'block';
                 switch (Notification.permission) {
-                    case 'granted':
-                        permissionArea.style.display = 'none';
-                        break;
+                    case 'granted': permissionArea.style.display = 'none'; break;
                     case 'denied':
                         permissionArea.style.display = 'block';
                         permissionStatus.textContent = '通知がブロックされています。ブラウザの設定から変更してください。';
@@ -199,6 +219,11 @@
                     updatePermissionUI();
                     if (permission === 'granted') showStatusMessage('通知が許可されました！', 'success');
                 });
+            }
+            
+            function renderAll() {
+                renderTimers();
+                renderNotifiedTimers();
             }
 
             function renderTimers() {
@@ -232,7 +257,7 @@
                     noNotifiedMessage.style.display = 'block';
                 } else {
                     noNotifiedMessage.style.display = 'none';
-                    const sortedNotified = [...notifiedTimers].sort((a, b) => b.notifiedAt - a.notifiedAt); // Show newest first
+                    const sortedNotified = [...notifiedTimers].sort((a, b) => b.notifiedAt - a.notifiedAt);
                     sortedNotified.forEach(timer => {
                         const timerEl = document.createElement('div');
                         timerEl.className = 'bg-gray-700/50 rounded-lg p-3 flex items-center justify-between animate-fade-in';
@@ -250,14 +275,52 @@
                     });
                 }
             }
+            
+            function activateTimer(timerData) {
+                const now = Date.now();
+                const delay = timerData.triggerTime - now;
+
+                if (delay <= 0) {
+                    // Timer has already passed, move to notified
+                    handleNotification(timerData.id);
+                    return;
+                }
+                
+                const timeoutId = setTimeout(() => {
+                    handleNotification(timerData.id);
+                }, delay);
+
+                // Add timeoutId to the timer object in the main array
+                const timerInArray = timers.find(t => t.id === timerData.id);
+                if (timerInArray) {
+                    timerInArray.timeoutId = timeoutId;
+                }
+            }
+            
+            function handleNotification(timerId) {
+                const notifiedItem = timers.find(t => t.id === timerId);
+                if (!notifiedItem) return;
+
+                if (Notification.permission === 'granted') {
+                    new Notification('時間です！', { body: notifiedItem.message, icon: 'https://placehold.co/128x128/7C3AED/FFFFFF?text=🔔' });
+                }
+
+                notifiedItem.notifiedAt = Date.now();
+                // We don't need the timeoutId anymore
+                delete notifiedItem.timeoutId;
+                notifiedTimers.push(notifiedItem);
+                
+                timers = timers.filter(t => t.id !== timerId);
+                
+                saveTimers();
+                saveNotifiedTimers();
+                renderAll();
+            }
 
             function setTimer(e) {
                 e.preventDefault();
                 const message = messageInput.value.trim();
-                if (!message) {
-                    showStatusMessage('通知メッセージを入力してください。');
-                    return;
-                }
+                if (!message) { showStatusMessage('通知メッセージを入力してください。'); return; }
 
                 const triggerType = document.querySelector('input[name="trigger-type"]:checked').value;
                 let triggerTime;
@@ -265,41 +328,29 @@
 
                 if (triggerType === 'minutes') {
                     const minutes = parseInt(minutesInput.value, 10);
-                    if (isNaN(minutes) || minutes < 1) {
-                        showStatusMessage('1分以上の正しい分数を入力してください。');
-                        return;
-                    }
+                    if (isNaN(minutes) || minutes < 1) { showStatusMessage('1分以上の正しい分数を入力してください。'); return; }
                     triggerTime = new Date(now.getTime() + minutes * 60 * 1000);
                 } else {
                     const timeValue = timeInput.value;
-                    if (!timeValue) {
-                        showStatusMessage('時刻を指定してください。');
-                        return;
-                    }
+                    if (!timeValue) { showStatusMessage('時刻を指定してください。'); return; }
                     const [hours, minutes] = timeValue.split(':');
                     triggerTime = new Date();
                     triggerTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
                     if (triggerTime < now) triggerTime.setDate(triggerTime.getDate() + 1);
                 }
 
-                const id = Date.now() + Math.random();
-                const timerData = { id, message, triggerType, value: triggerType === 'minutes' ? minutesInput.value : timeInput.value, triggerTime: triggerTime.getTime() };
+                const timerData = { 
+                    id: Date.now() + Math.random(), 
+                    message, 
+                    triggerType, 
+                    value: triggerType === 'minutes' ? minutesInput.value : timeInput.value, 
+                    triggerTime: triggerTime.getTime() 
+                };
                 
-                const timeoutId = setTimeout(() => {
-                    if (Notification.permission === 'granted') {
-                        new Notification('時間です！', { body: message, icon: 'https://placehold.co/128x128/7C3AED/FFFFFF?text=🔔' });
-                    }
-                    const notifiedItem = timers.find(t => t.id === id);
-                    if (notifiedItem) {
-                        notifiedItem.notifiedAt = Date.now();
-                        notifiedTimers.push(notifiedItem);
-                    }
-                    timers = timers.filter(t => t.id !== id);
-                    renderTimers();
-                    renderNotifiedTimers();
-                }, triggerTime.getTime() - now.getTime());
-
-                timers.push({ ...timerData, timeoutId });
+                timers.push(timerData);
+                activateTimer(timerData);
+                
+                saveTimers();
                 renderTimers();
                 showStatusMessage('タイマーをセットしました！', 'success');
                 messageInput.value = '';
@@ -311,75 +362,75 @@
                 if (timerToCancel) {
                     clearTimeout(timerToCancel.timeoutId);
                     timers = timers.filter(t => t.id !== idToCancel);
+                    saveTimers();
                     renderTimers();
                 }
             }
             
             function handleNotifiedListClick(e) {
                 const target = e.target;
+                if (!target.dataset.id) return;
                 const id = parseFloat(target.dataset.id);
+
                 if (target.matches('.re-edit-btn')) {
                     const timerToEdit = notifiedTimers.find(t => t.id === id);
                     if (timerToEdit) {
                         messageInput.value = timerToEdit.message;
                         document.querySelector(`input[name="trigger-type"][value="${timerToEdit.triggerType}"]`).checked = true;
                         toggleInputs();
-                        if (timerToEdit.triggerType === 'minutes') {
-                            minutesInput.value = timerToEdit.value;
-                        } else {
-                            timeInput.value = timerToEdit.value;
-                        }
+                        if (timerToEdit.triggerType === 'minutes') minutesInput.value = timerToEdit.value;
+                        else timeInput.value = timerToEdit.value;
                         messageInput.focus();
-                        // Scroll form into view on smaller screens
                         timerForm.scrollIntoView({ behavior: 'smooth' });
                     }
                 } else if (target.matches('.delete-notified-btn')) {
                     notifiedTimers = notifiedTimers.filter(t => t.id !== id);
+                    saveNotifiedTimers();
                     renderNotifiedTimers();
                 }
             }
             
             function clearAllNotified() {
-                // Removed confirm() to prevent issues in certain environments.
-                // The action is now immediate.
                 notifiedTimers = [];
+                saveNotifiedTimers();
                 renderNotifiedTimers();
                 showStatusMessage('通知済みリストをクリアしました。', 'success');
             }
 
             function toggleInputs() {
                 const selectedType = document.querySelector('input[name="trigger-type"]:checked').value;
-                if (selectedType === 'minutes') {
-                    inputMinutesWrapper.style.display = 'block';
-                    inputTimeWrapper.style.display = 'none';
-                } else {
-                    inputMinutesWrapper.style.display = 'none';
-                    inputTimeWrapper.style.display = 'block';
-                    if (!timeInput.value) {
-                        const now = new Date();
-                        now.setMinutes(now.getMinutes() + 10);
-                        timeInput.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                    }
+                inputMinutesWrapper.style.display = selectedType === 'minutes' ? 'block' : 'none';
+                inputTimeWrapper.style.display = selectedType === 'time' ? 'block' : 'none';
+
+                if (selectedType === 'time' && !timeInput.value) {
+                    const now = new Date();
+                    now.setMinutes(now.getMinutes() + 10);
+                    timeInput.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                 }
             }
 
-            // --- Event Listeners ---
-            requestPermissionBtn.addEventListener('click', requestPermission);
-            timerForm.addEventListener('submit', setTimer);
-            timersList.addEventListener('click', (e) => {
-                if(e.target.matches('.cancel-btn')) {
-                    cancelTimer(parseFloat(e.target.dataset.id));
-                }
-            });
-            notifiedList.addEventListener('click', handleNotifiedListClick);
-            clearAllNotifiedBtn.addEventListener('click', clearAllNotified);
-            triggerTypeRadios.forEach(radio => radio.addEventListener('change', toggleInputs));
-            
             // --- Initial Setup ---
-            updatePermissionUI();
-            renderTimers();
-            renderNotifiedTimers();
-            toggleInputs();
+            function initialize() {
+                loadData();
+                timers.forEach(timer => activateTimer(timer));
+                updatePermissionUI();
+                renderAll();
+                toggleInputs();
+
+                // Event Listeners
+                requestPermissionBtn.addEventListener('click', requestPermission);
+                timerForm.addEventListener('submit', setTimer);
+                timersList.addEventListener('click', (e) => {
+                    if (e.target.matches('.cancel-btn')) {
+                        cancelTimer(parseFloat(e.target.dataset.id));
+                    }
+                });
+                notifiedList.addEventListener('click', handleNotifiedListClick);
+                clearAllNotifiedBtn.addEventListener('click', clearAllNotified);
+                triggerTypeRadios.forEach(radio => radio.addEventListener('change', toggleInputs));
+            }
+
+            initialize();
         });
 
         const style = document.createElement('style');
