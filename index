@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シンプル通知アプリ</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts for a modern look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .focus-ring-custom {
+            --tw-ring-color: #60a5fa; /* blue-400 */
+        }
+        .status-message {
+            transition: opacity 0.3s, transform 0.3s;
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        .status-message.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        /* For custom scrollbar styling */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #374151; /* gray-700 */
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #6b7280; /* gray-500 */
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af; /* gray-400 */
+        }
+        .column-content {
+            height: calc(100vh - 20rem); /* Adjust height as needed */
+            max-height: 500px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen p-4 md:p-6">
+
+    <div class="w-full max-w-6xl mx-auto bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8">
+        
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-white">通知タイマー</h1>
+            <p class="text-gray-400 mt-1">大事なことを忘れないように。</p>
+        </div>
+        
+        <!-- Main Content Area with 3 columns for larger screens -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Column 1: Settings -->
+            <div class="space-y-6 lg:border-r lg:border-gray-700 lg:pr-6">
+                <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2">設定</h2>
+                
+                <div id="status-message-container" class="h-8"></div>
+
+                <div id="permission-area" class="bg-gray-700/50 rounded-lg p-4 text-center">
+                    <p id="permission-status" class="text-sm text-gray-300 mb-3">通知を表示するには許可が必要です。</p>
+                    <button id="request-permission-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus-ring-custom">
+                        通知を許可する
+                    </button>
+                </div>
+
+                <form id="timer-form" class="space-y-4 hidden">
+                    <div>
+                        <label for="message" class="block text-sm font-medium text-gray-300 mb-1">通知メッセージ</label>
+                        <input type="text" id="message" name="message" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus-ring-custom placeholder-gray-500" placeholder="例：コーヒーを淹れる" required>
+                    </div>
+
+                    <fieldset>
+                        <legend class="block text-sm font-medium text-gray-300 mb-2">通知のタイミング</legend>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <input type="radio" id="type-minutes" name="trigger-type" value="minutes" class="hidden peer" checked>
+                                <label for="type-minutes" class="block w-full text-center py-2 px-2 bg-gray-700 rounded-lg cursor-pointer peer-checked:bg-blue-600 peer-checked:text-white peer-checked:font-semibold transition">分後</label>
+                            </div>
+                            <div>
+                                <input type="radio" id="type-time" name="trigger-type" value="time" class="hidden peer">
+                                <label for="type-time" class="block w-full text-center py-2 px-2 bg-gray-700 rounded-lg cursor-pointer peer-checked:bg-blue-600 peer-checked:text-white peer-checked:font-semibold transition">時刻指定</label>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <div id="input-minutes-wrapper">
+                        <label for="minutes" class="sr-only">分数</label>
+                        <input type="number" id="minutes" name="minutes" min="1" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus-ring-custom" value="10">
+                    </div>
+                    <div id="input-time-wrapper" class="hidden">
+                         <label for="time" class="sr-only">時刻</label>
+                        <input type="time" id="time" name="time" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus-ring-custom">
+                    </div>
+
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500">
+                        タイマーをセット
+                    </button>
+                </form>
+            </div>
+
+            <!-- Column 2: Active Timers -->
+            <div class="space-y-4 lg:border-r lg:border-gray-700 lg:pr-6">
+                <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2">有効なタイマー</h2>
+                <div id="timers-list" class="space-y-3 overflow-y-auto custom-scrollbar column-content">
+                    <p id="no-timers-message" class="text-gray-500 text-center py-4">セットされたタイマーはありません。</p>
+                </div>
+            </div>
+
+            <!-- Column 3: Notified Timers -->
+            <div class="space-y-4">
+                <div class="flex justify-between items-center border-b border-gray-700 pb-2">
+                    <h2 class="text-xl font-semibold text-white">通知済み</h2>
+                    <button id="clear-all-notified-btn" class="text-sm text-blue-400 hover:text-blue-300 transition">全削除</button>
+                </div>
+                <div id="notified-list" class="space-y-3 overflow-y-auto custom-scrollbar column-content">
+                    <p id="no-notified-message" class="text-gray-500 text-center py-4">通知済みのタイマーはありません。</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Element References ---
+            const permissionArea = document.getElementById('permission-area');
+            const permissionStatus = document.getElementById('permission-status');
+            const requestPermissionBtn = document.getElementById('request-permission-btn');
+            const timerForm = document.getElementById('timer-form');
+            const timersList = document.getElementById('timers-list');
+            const noTimersMessage = document.getElementById('no-timers-message');
+            const notifiedList = document.getElementById('notified-list');
+            const noNotifiedMessage = document.getElementById('no-notified-message');
+            const clearAllNotifiedBtn = document.getElementById('clear-all-notified-btn');
+            const statusMessageContainer = document.getElementById('status-message-container');
+            
+            const messageInput = document.getElementById('message');
+            const triggerTypeRadios = document.querySelectorAll('input[name="trigger-type"]');
+            const minutesInput = document.getElementById('minutes');
+            const timeInput = document.getElementById('time');
+            const inputMinutesWrapper = document.getElementById('input-minutes-wrapper');
+            const inputTimeWrapper = document.getElementById('input-time-wrapper');
+
+            // --- State ---
+            let timers = [];
+            let notifiedTimers = [];
+            let statusTimeout;
+
+            // --- Functions ---
+            function showStatusMessage(text, type = 'error') {
+                clearTimeout(statusTimeout);
+                statusMessageContainer.innerHTML = '';
+                const messageEl = document.createElement('div');
+                const colorClass = type === 'error' ? 'text-red-400' : 'text-green-400';
+                messageEl.className = `status-message text-center font-semibold ${colorClass}`;
+                messageEl.textContent = text;
+                statusMessageContainer.appendChild(messageEl);
+                void messageEl.offsetWidth; 
+                messageEl.classList.add('show');
+                statusTimeout = setTimeout(() => { messageEl.classList.remove('show'); }, 3000);
+            }
+
+            function updatePermissionUI() {
+                if (!('Notification' in window)) {
+                    permissionStatus.textContent = 'お使いのブラウザは通知をサポートしていません。';
+                    requestPermissionBtn.style.display = 'none';
+                    timerForm.style.display = 'none';
+                    return;
+                }
+                timerForm.style.display = 'block';
+                switch (Notification.permission) {
+                    case 'granted':
+                        permissionArea.style.display = 'none';
+                        break;
+                    case 'denied':
+                        permissionArea.style.display = 'block';
+                        permissionStatus.textContent = '通知がブロックされています。ブラウザの設定から変更してください。';
+                        requestPermissionBtn.style.display = 'none';
+                        break;
+                    default:
+                        permissionArea.style.display = 'block';
+                        permissionStatus.textContent = '通知を表示するには許可が必要です。';
+                        requestPermissionBtn.style.display = 'block';
+                        break;
+                }
+            }
+
+            function requestPermission() {
+                Notification.requestPermission().then(permission => {
+                    updatePermissionUI();
+                    if (permission === 'granted') showStatusMessage('通知が許可されました！', 'success');
+                });
+            }
+
+            function renderTimers() {
+                timersList.innerHTML = '';
+                if (timers.length === 0) {
+                    timersList.appendChild(noTimersMessage);
+                    noTimersMessage.style.display = 'block';
+                } else {
+                    noTimersMessage.style.display = 'none';
+                    const sortedTimers = [...timers].sort((a, b) => a.triggerTime - b.triggerTime);
+                    sortedTimers.forEach(timer => {
+                        const timerEl = document.createElement('div');
+                        timerEl.className = 'bg-gray-700/80 rounded-lg p-3 flex items-center justify-between animate-fade-in';
+                        const formattedTime = new Date(timer.triggerTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        timerEl.innerHTML = `
+                            <div>
+                                <p class="font-medium text-white break-all">${timer.message}</p>
+                                <p class="text-sm text-gray-400">通知時刻: ${formattedTime}</p>
+                            </div>
+                            <button data-id="${timer.id}" class="cancel-btn bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md transition duration-200 text-sm ml-2 flex-shrink-0">取消</button>
+                        `;
+                        timersList.appendChild(timerEl);
+                    });
+                }
+            }
+            
+            function renderNotifiedTimers() {
+                notifiedList.innerHTML = '';
+                 if (notifiedTimers.length === 0) {
+                    notifiedList.appendChild(noNotifiedMessage);
+                    noNotifiedMessage.style.display = 'block';
+                } else {
+                    noNotifiedMessage.style.display = 'none';
+                    const sortedNotified = [...notifiedTimers].sort((a, b) => b.notifiedAt - a.notifiedAt); // Show newest first
+                    sortedNotified.forEach(timer => {
+                        const timerEl = document.createElement('div');
+                        timerEl.className = 'bg-gray-700/50 rounded-lg p-3 flex items-center justify-between animate-fade-in';
+                        timerEl.innerHTML = `
+                            <div class="flex-grow min-w-0">
+                                <p class="font-medium text-gray-300 line-through break-all">${timer.message}</p>
+                                <p class="text-sm text-gray-500">通知時刻: ${new Date(timer.triggerTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}</p>
+                            </div>
+                            <div class="flex gap-2 ml-2 flex-shrink-0">
+                                <button data-id="${timer.id}" class="re-edit-btn bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded-md transition duration-200 text-sm">再編集</button>
+                                <button data-id="${timer.id}" class="delete-notified-btn bg-gray-600 hover:bg-gray-500 text-white py-1 px-3 rounded-md transition duration-200 text-sm">削除</button>
+                            </div>
+                        `;
+                        notifiedList.appendChild(timerEl);
+                    });
+                }
+            }
+
+            function setTimer(e) {
+                e.preventDefault();
+                const message = messageInput.value.trim();
+                if (!message) {
+                    showStatusMessage('通知メッセージを入力してください。');
+                    return;
+                }
+
+                const triggerType = document.querySelector('input[name="trigger-type"]:checked').value;
+                let triggerTime;
+                const now = new Date();
+
+                if (triggerType === 'minutes') {
+                    const minutes = parseInt(minutesInput.value, 10);
+                    if (isNaN(minutes) || minutes < 1) {
+                        showStatusMessage('1分以上の正しい分数を入力してください。');
+                        return;
+                    }
+                    triggerTime = new Date(now.getTime() + minutes * 60 * 1000);
+                } else {
+                    const timeValue = timeInput.value;
+                    if (!timeValue) {
+                        showStatusMessage('時刻を指定してください。');
+                        return;
+                    }
+                    const [hours, minutes] = timeValue.split(':');
+                    triggerTime = new Date();
+                    triggerTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+                    if (triggerTime < now) triggerTime.setDate(triggerTime.getDate() + 1);
+                }
+
+                const id = Date.now() + Math.random();
+                const timerData = { id, message, triggerType, value: triggerType === 'minutes' ? minutesInput.value : timeInput.value, triggerTime: triggerTime.getTime() };
+                
+                const timeoutId = setTimeout(() => {
+                    if (Notification.permission === 'granted') {
+                        new Notification('時間です！', { body: message, icon: 'https://placehold.co/128x128/7C3AED/FFFFFF?text=🔔' });
+                    }
+                    const notifiedItem = timers.find(t => t.id === id);
+                    if (notifiedItem) {
+                        notifiedItem.notifiedAt = Date.now();
+                        notifiedTimers.push(notifiedItem);
+                    }
+                    timers = timers.filter(t => t.id !== id);
+                    renderTimers();
+                    renderNotifiedTimers();
+                }, triggerTime.getTime() - now.getTime());
+
+                timers.push({ ...timerData, timeoutId });
+                renderTimers();
+                showStatusMessage('タイマーをセットしました！', 'success');
+                messageInput.value = '';
+                messageInput.focus();
+            }
+
+            function cancelTimer(idToCancel) {
+                const timerToCancel = timers.find(t => t.id === idToCancel);
+                if (timerToCancel) {
+                    clearTimeout(timerToCancel.timeoutId);
+                    timers = timers.filter(t => t.id !== idToCancel);
+                    renderTimers();
+                }
+            }
+            
+            function handleNotifiedListClick(e) {
+                const target = e.target;
+                const id = parseFloat(target.dataset.id);
+                if (target.matches('.re-edit-btn')) {
+                    const timerToEdit = notifiedTimers.find(t => t.id === id);
+                    if (timerToEdit) {
+                        messageInput.value = timerToEdit.message;
+                        document.querySelector(`input[name="trigger-type"][value="${timerToEdit.triggerType}"]`).checked = true;
+                        toggleInputs();
+                        if (timerToEdit.triggerType === 'minutes') {
+                            minutesInput.value = timerToEdit.value;
+                        } else {
+                            timeInput.value = timerToEdit.value;
+                        }
+                        messageInput.focus();
+                        // Scroll form into view on smaller screens
+                        timerForm.scrollIntoView({ behavior: 'smooth' });
+                    }
+                } else if (target.matches('.delete-notified-btn')) {
+                    notifiedTimers = notifiedTimers.filter(t => t.id !== id);
+                    renderNotifiedTimers();
+                }
+            }
+            
+            function clearAllNotified() {
+                // Removed confirm() to prevent issues in certain environments.
+                // The action is now immediate.
+                notifiedTimers = [];
+                renderNotifiedTimers();
+                showStatusMessage('通知済みリストをクリアしました。', 'success');
+            }
+
+            function toggleInputs() {
+                const selectedType = document.querySelector('input[name="trigger-type"]:checked').value;
+                if (selectedType === 'minutes') {
+                    inputMinutesWrapper.style.display = 'block';
+                    inputTimeWrapper.style.display = 'none';
+                } else {
+                    inputMinutesWrapper.style.display = 'none';
+                    inputTimeWrapper.style.display = 'block';
+                    if (!timeInput.value) {
+                        const now = new Date();
+                        now.setMinutes(now.getMinutes() + 10);
+                        timeInput.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    }
+                }
+            }
+
+            // --- Event Listeners ---
+            requestPermissionBtn.addEventListener('click', requestPermission);
+            timerForm.addEventListener('submit', setTimer);
+            timersList.addEventListener('click', (e) => {
+                if(e.target.matches('.cancel-btn')) {
+                    cancelTimer(parseFloat(e.target.dataset.id));
+                }
+            });
+            notifiedList.addEventListener('click', handleNotifiedListClick);
+            clearAllNotifiedBtn.addEventListener('click', clearAllNotified);
+            triggerTypeRadios.forEach(radio => radio.addEventListener('change', toggleInputs));
+            
+            // --- Initial Setup ---
+            updatePermissionUI();
+            renderTimers();
+            renderNotifiedTimers();
+            toggleInputs();
+        });
+
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fade-in {
+                animation: fadeIn 0.3s ease-out forwards;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
